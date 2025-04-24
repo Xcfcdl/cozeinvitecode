@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import logging
 from pathlib import Path
+from fastapi.responses import HTMLResponse
 
 # 加载环境变量
 load_dotenv()
@@ -348,6 +349,24 @@ async def startup_event():
     # 启动自动更新线程
     threading.Thread(target=schedule_jobs, daemon=True).start()
 
-# 挂载静态文件目录
-app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/", StaticFiles(directory="static", html=True), name="root")
+# 自定义 HTML 响应处理类
+class CustomHTMLResponse(HTMLResponse):
+    def __init__(self, content: str, *args, **kwargs):
+        # 从环境变量获取 Google Analytics ID
+        ga_id = os.getenv('GOOGLE_ANALYTICS_ID', '')
+        # 替换模板变量
+        content = content.replace('{{ GOOGLE_ANALYTICS_ID }}', ga_id)
+        super().__init__(content, *args, **kwargs)
+
+# 自定义静态文件处理
+class CustomStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if path.endswith('.html'):
+            content = await response.body()
+            return CustomHTMLResponse(content.decode())
+        return response
+
+# 修改静态文件挂载
+app.mount("/static", CustomStaticFiles(directory="static"), name="static")
+app.mount("/", CustomStaticFiles(directory="static", html=True), name="root")
