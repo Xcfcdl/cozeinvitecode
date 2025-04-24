@@ -3,6 +3,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import time
 
 # 读取环境变量
 print('开始读取环境变量')
@@ -82,19 +83,84 @@ try:
     invite_now_button.click()
     print('正在等待并点击立即邀请')
 
-    # 获取邀请码和激活状态信息
-    invite_codes = WebDriverWait(driver, 30).until(
-        EC.presence_of_all_elements_located((By.CSS_SELECTOR, '.items-center.coz-fg-plus'))
-    )
-    statuses = WebDriverWait(driver, 30).until(
-        EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.relative > div > div > div > div:nth-child(2) > div > span'))
-    )
-    print('邀请码和激活状态信息获取完成')
+    # 等待页面完全加载
+    time.sleep(3)  # 添加额外等待时间
 
-    for i in range(len(invite_codes)):
-        print(f'邀请码: {invite_codes[i].text}, 状态: {statuses[i].text}')
+    # 使用更精确的选择器和显式等待
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, 'div[class*="invite-code"]'))
+    )
+
+    # 获取所有邀请码容器
+    invite_containers = driver.find_elements(By.CSS_SELECTOR, 'div[class*="invite-code"]')
+    print(f'找到 {len(invite_containers)} 个邀请码容器')
+
+    # 确保页面完全加载
+    time.sleep(2)
+
+    # 首先尝试使用 JavaScript 方法获取
+    js_success = False
+    try:
+        elements = driver.execute_script("""
+            return Array.from(document.querySelectorAll(".invite-code-item")).map(el => el.innerText);
+        """)
+        
+        if elements:
+            print("使用 JavaScript 方法获取邀请码")
+            for element_text in elements:
+                try:
+                    code, status = element_text.split('\n')
+                    if code and status:
+                        print(f'邀请码: {code}, 状态: {status}')
+                        js_success = True
+                except Exception as e:
+                    print(f'处理邀请码文本时出错: {str(e)}')
+    except Exception as e:
+        print(f'JavaScript 方法获取失败，尝试备用方法: {str(e)}')
+
+    # 如果 JavaScript 方法成功，跳过 Selenium 方法
+    if js_success:
+        print("成功使用 JavaScript 方法获取邀请码")
+    else:
+        # 使用 Selenium 方法作为备用
+        for container in invite_containers:
+            try:
+                # 使用 JavaScript 滚动到元素位置，确保元素可见
+                driver.execute_script("arguments[0].scrollIntoView(true);", container)
+                time.sleep(0.5)  # 短暂等待滚动完成
+
+                # 尝试多个可能的选择器
+                code = None
+                status = None
+
+                # 尝试不同的选择器组合
+                selectors = [
+                    ('.items-center.coz-fg-plus', 'div > div > div > div:nth-child(2) > div > span'),
+                    ('div[class*="invite-code"] > div.coz-fg-plus', 'div[class*="invite-code"] > div > button > div > span')
+                ]
+
+                for code_selector, status_selector in selectors:
+                    try:
+                        code_element = container.find_element(By.CSS_SELECTOR, code_selector)
+                        status_element = container.find_element(By.CSS_SELECTOR, status_selector)
+                        code = code_element.text.strip()
+                        status = status_element.text.strip()
+                        if code and status:
+                            break
+                    except:
+                        continue
+
+                if code and status:
+                    print(f'邀请码: {code}, 状态: {status}')
+                else:
+                    print('未能获取邀请码或状态')
+
+            except Exception as e:
+                print(f'处理邀请码元素时出错: {str(e)}')
+                continue
 
     print("登录完成")
 
 finally:
-    pass
+    driver.quit()
+    print("浏览器已关闭")

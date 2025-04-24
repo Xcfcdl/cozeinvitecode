@@ -172,32 +172,75 @@ def get_invite_codes(account_id, password):
             pass
 
         update_status_step("获取邀请码信息")
-        # 等待邀请码元素出现
-        wait.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, '.items-center.coz-fg-plus'))
-        )
-        
-        # 获取所有邀请码元素
-        invite_codes = driver.find_elements(By.CSS_SELECTOR, '.items-center.coz-fg-plus')
-        # 获取所有状态元素
-        statuses = driver.find_elements(By.CSS_SELECTOR, 'div.relative > div > div > div > div:nth-child(2) > div > span')
+        # 等待页面完全加载
+        time.sleep(3)
 
+        # 首先尝试使用 JavaScript 方法获取
         codes = []
-        # 使用 zip 安全地遍历两个列表
-        for code_elem, status_elem in zip(invite_codes, statuses):
-            try:
-                code_text = code_elem.text.strip()
-                status_text = status_elem.text.strip()
-                if code_text:
-                    logger.info(f'邀请码: {code_text}, 状态: {status_text}')
-                    codes.append({
-                        'code': code_text,
-                        'status': status_text
-                    })
-            except Exception as e:
-                logger.error(f"处理邀请码元素时出错: {str(e)}")
-                continue
-        
+        try:
+            elements = driver.execute_script("""
+                return Array.from(document.querySelectorAll(".invite-code-item")).map(el => el.innerText);
+            """)
+            
+            if elements:
+                logger.info("使用 JavaScript 方法获取邀请码")
+                for element_text in elements:
+                    try:
+                        code, status = element_text.split('\n')
+                        if code and status:
+                            logger.info(f'邀请码: {code}, 状态: {status}')
+                            codes.append({
+                                'code': code.strip(),
+                                'status': status.strip()
+                            })
+                    except Exception as e:
+                        logger.error(f'处理邀请码文本时出错: {str(e)}')
+        except Exception as e:
+            logger.warning(f'JavaScript 方法获取失败，尝试备用方法: {str(e)}')
+
+        # 如果 JavaScript 方法没有获取到数据，使用 Selenium 方法
+        if not codes:
+            logger.info("使用 Selenium 方法获取邀请码")
+            # 等待邀请码容器出现
+            wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'div[class*="invite-code"]'))
+            )
+            
+            # 获取所有邀请码容器
+            invite_containers = driver.find_elements(By.CSS_SELECTOR, 'div[class*="invite-code"]')
+            logger.info(f'找到 {len(invite_containers)} 个邀请码容器')
+
+            for container in invite_containers:
+                try:
+                    # 使用 JavaScript 滚动到元素位置
+                    driver.execute_script("arguments[0].scrollIntoView(true);", container)
+                    time.sleep(0.5)
+
+                    # 尝试不同的选择器组合
+                    selectors = [
+                        ('.items-center.coz-fg-plus', 'div > div > div > div:nth-child(2) > div > span'),
+                        ('div[class*="invite-code"] > div.coz-fg-plus', 'div[class*="invite-code"] > div > button > div > span')
+                    ]
+
+                    for code_selector, status_selector in selectors:
+                        try:
+                            code_element = container.find_element(By.CSS_SELECTOR, code_selector)
+                            status_element = container.find_element(By.CSS_SELECTOR, status_selector)
+                            code = code_element.text.strip()
+                            status = status_element.text.strip()
+                            if code and status:
+                                codes.append({
+                                    'code': code,
+                                    'status': status
+                                })
+                                break
+                        except:
+                            continue
+
+                except Exception as e:
+                    logger.error(f'处理邀请码元素时出错: {str(e)}')
+                    continue
+
         if not codes:
             logger.warning("未找到任何邀请码")
             
