@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 import logging
 from pathlib import Path
 from fastapi.responses import HTMLResponse
+from functools import lru_cache
 
 # 加载环境变量
 load_dotenv()
@@ -41,6 +42,7 @@ app.add_middleware(
 
 # 全局变量
 DATA_FILE = "data/data.json"
+CACHE_TTL = 300  # 缓存有效期5分钟
 os.makedirs("data", exist_ok=True)
 os.makedirs("static", exist_ok=True)
 
@@ -53,6 +55,16 @@ update_status = {
     "next_update_time": None
 }
 update_lock = Lock()
+
+# 添加缓存装饰器
+@lru_cache(maxsize=1)
+def get_cached_data():
+    """获取缓存的数据"""
+    return load_data()
+
+def invalidate_cache():
+    """使缓存失效"""
+    get_cached_data.cache_clear()
 
 def update_status_step(step: str):
     """更新当前执行步骤"""
@@ -95,6 +107,13 @@ def get_invite_codes(account_id, password):
     chrome_options.add_argument('--disable-infobars')
     chrome_options.add_argument('--disable-popup-blocking')
     chrome_options.add_argument('--start-maximized')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--memory-pressure-off')
+    chrome_options.add_argument('--single-process')
+    chrome_options.add_argument('--disable-setuid-sandbox')
+    chrome_options.add_argument('--disable-software-rasterizer')
+    chrome_options.add_argument('--disable-dev-tools')
+    chrome_options.page_load_strategy = 'eager'
     chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     
     if chrome_path:
@@ -258,18 +277,20 @@ def get_invite_codes(account_id, password):
             except Exception as e:
                 logger.error(f"关闭浏览器时出错: {str(e)}")
 
-# 保存数据到文件
-def save_data(data):
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-# 从文件加载数据
+# 修改 load_data 函数
 def load_data():
     try:
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            data = json.load(f)
+            return data
     except FileNotFoundError:
         return {"codes": [], "last_update": None, "next_update": None}
+
+# 修改 save_data 函数
+def save_data(data):
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    invalidate_cache()  # 保存数据时使缓存失效
 
 # 更新邀请码
 def update_invite_codes():
@@ -339,14 +360,15 @@ def update_invite_codes():
         update_status["current_step"] = None
         update_lock.release()
 
+# 修改 API 端点
 @app.get("/api/codes")
 def get_codes():
-    return load_data()
+    return get_cached_data()
 
 @app.get('/api/invite_codes')
 async def get_invite_codes_api():
     """获取邀请码数据"""
-    data = load_data()
+    data = get_cached_data()
     return {
         "is_updating": update_status["is_updating"],
         "current_step": update_status["current_step"],
@@ -362,22 +384,19 @@ def schedule_jobs():
     
     def random_update():
         try:
-            # 执行更新
             data = update_invite_codes()
             if data and data.get("next_update"):
-                # 计算下次更新的延迟时间（毫秒转分钟）
                 next_delay = (data["next_update"] - int(datetime.now().timestamp() * 1000)) / 60000
-                schedule.clear()  # 清除之前的任务
+                schedule.clear()
                 schedule.every(next_delay).minutes.do(random_update)
         except Exception as e:
             logger.error(f"更新任务出错: {str(e)}")
 
-    # 初始运行
     random_update()
     
     while True:
         schedule.run_pending()
-        time.sleep(1)
+        time.sleep(60)  # 将检查间隔从1秒改为60秒
 
 @app.on_event("startup")
 async def startup_event():

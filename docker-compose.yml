@@ -20,4 +20,17 @@ services:
       - SYS_ADMIN
     security_opt:
       - seccomp=unconfined
-    shm_size: 2gb 
+    shm_size: 2gb
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 2048
+ 
