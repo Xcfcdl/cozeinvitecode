@@ -567,7 +567,7 @@ async def get_unused_invite_code():
         return JSONResponse(content={
             "success": True,
             "code": invite_code["code"],
-            "status": "已激活",  # 新状态
+            "status": "未激活",  # 新状态
             "source": invite_code["source"],
             "message": "获取邀请码成功"
         })
