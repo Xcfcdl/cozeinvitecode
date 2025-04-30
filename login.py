@@ -30,12 +30,33 @@ try:
     driver.get('https://www.coze.cn/space-preview?')
     print('登录页面已打开')
 
-    # 点击登录按钮
-    login_button = WebDriverWait(driver, 30).until(
-        EC.element_to_be_clickable((By.CSS_SELECTOR, 'button.login-btn--WcinUq6XuYM7snJD'))
+    # 直接使用JavaScript查找和点击按钮，从测试结果看这个方法是有效的
+    try:
+        driver.execute_script("Array.from(document.querySelectorAll('button')).find(btn => btn.textContent.includes('登录')).click()")
+        print('使用JavaScript查找并点击登录按钮')
+    except Exception as e:
+        print(f'JavaScript点击失败: {str(e)}')
+        # 如果JavaScript方法失败，尝试备用方法
+        try:
+            buttons = driver.find_elements(By.TAG_NAME, 'button')
+            found = False
+            for button in buttons:
+                if '登录' in button.text:
+                    button.click()
+                    print(f'通过遍历找到并点击: {button.text}')
+                    found = True
+                    break
+            
+            if not found:
+                print('无法找到登录按钮')
+        except Exception as e:
+            print(f'遍历按钮失败: {str(e)}')
+    
+    print('正在等待登录对话框')
+    # 等待登录对话框出现
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, 'div[role="dialog"]'))
     )
-    login_button.click()
-    print('登录按钮已点击')
 
     # 等待并点击账号登录tab
     account_login_tab = WebDriverWait(driver, 30).until(
