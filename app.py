@@ -391,10 +391,42 @@ def get_invite_codes(account_id, password):
     finally:
         if driver:
             try:
+                logger.info("正在关闭浏览器...")
                 driver.quit()
                 logger.info("浏览器已关闭")
+                
+                # 强制检查潜在的残留进程 (针对ChromeDriver)
+                if platform.system().lower() == "linux":
+                    try:
+                        os.system("pkill -f chromedriver")
+                        os.system("pkill -f chrome")
+                        logger.info("已清理可能残留的Chrome进程")
+                    except Exception as e:
+                        logger.error(f"清理Chrome进程时出错: {str(e)}")
+                elif platform.system().lower() == "darwin":  # macOS
+                    try:
+                        os.system("pkill -f 'Google Chrome'")
+                        os.system("pkill -f chromedriver")
+                        logger.info("已清理可能残留的Chrome进程")
+                    except Exception as e:
+                        logger.error(f"清理Chrome进程时出错: {str(e)}")
+                elif platform.system().lower() == "windows":
+                    try:
+                        os.system("taskkill /f /im chromedriver.exe")
+                        os.system("taskkill /f /im chrome.exe")
+                        logger.info("已清理可能残留的Chrome进程")
+                    except Exception as e:
+                        logger.error(f"清理Chrome进程时出错: {str(e)}")
+                
             except Exception as e:
                 logger.error(f"关闭浏览器时出错: {str(e)}")
+                # 如果常规关闭失败，尝试更激进的方法
+                try:
+                    if hasattr(driver, 'service') and driver.service.process:
+                        driver.service.process.kill()
+                        logger.info("已强制终止ChromeDriver进程")
+                except Exception as e:
+                    logger.error(f"强制终止浏览器进程时出错: {str(e)}")
 
 # 修改 load_data 函数
 def load_data():
