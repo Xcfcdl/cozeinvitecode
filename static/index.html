@@ -147,6 +147,15 @@
     </Transition>
 
     <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+        <!-- 添加刷新按钮 -->
+        <div class="flex justify-end mb-4">
+            <button @click="refreshPage" 
+                    class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center transition-colors duration-300">
+                <span class="mdi mdi-refresh mr-2"></span>
+                重新随机选择
+            </button>
+        </div>
+
         <!-- 原有的更新状态和错误信息显示 -->
         <Transition name="step">
             <div v-if="isUpdating" class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -180,7 +189,7 @@
                          'bg-gray-50 border-gray-200': code.status === '已激活'}">
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-lg font-semibold" :class="{'text-green-600': code.status === '未激活'}">
-                        {{ code.code }}
+                        {{ code.code === randomUnactivatedCode ? code.code : '********' }}
                     </span>
                     <span class="text-sm px-2 py-1 rounded"
                           :class="{'bg-green-100 text-green-700': code.status === '未激活',
@@ -189,9 +198,10 @@
                     </span>
                 </div>
                 <button @click="copyCode(code.code)" 
-                        class="w-full mt-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded flex items-center justify-center transition-colors duration-300">
+                        class="w-full mt-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded flex items-center justify-center transition-colors duration-300"
+                        :disabled="code.code !== randomUnactivatedCode">
                     <span class="mdi mdi-content-copy mr-2"></span>
-                    复制邀请码
+                    {{ code.code === randomUnactivatedCode ? '复制邀请码' : '已隐藏' }}
                 </button>
             </div>
         </div>
@@ -306,7 +316,10 @@
                         show: false,
                         type: 'success',
                         message: ''
-                    }
+                    },
+                    randomUnactivatedCode: null,
+                    retryCount: 0,
+                    maxRetries: 3
                 }
             },
             methods: {
@@ -352,13 +365,16 @@
                     this.countdown = `${minutes}分${seconds}秒后更新`;
                 },
                 sortCodes(codes) {
-                    // 首先按激活状态排序（未激活在前），然后按来源排序
                     return [...codes].sort((a, b) => {
-                        // 首先按激活状态排序
+                        // 将随机选中的未激活码排在最前面
+                        if (a.code === this.randomUnactivatedCode) return -1;
+                        if (b.code === this.randomUnactivatedCode) return 1;
+                        
+                        // 然后按激活状态排序
                         if (a.status === '未激活' && b.status !== '未激活') return -1;
                         if (a.status !== '未激活' && b.status === '未激活') return 1;
                         
-                        // 如果激活状态相同，则按来源排序
+                        // 最后按来源排序
                         if (a.source < b.source) return -1;
                         if (a.source > b.source) return 1;
                         
@@ -376,6 +392,12 @@
                         this.nextUpdateTime = data.next_update_time
                         this.lastError = data.last_error
                         
+                        // 如果没有codes数据，保持现有状态
+                        if (!data.codes || !Array.isArray(data.codes)) {
+                            console.warn('未获取到邀请码数据，保持现有状态')
+                            return
+                        }
+                        
                         // 保持本地已激活状态的持久性
                         const copiedCodes = this.getCopiedCodes()
                         const processedCodes = data.codes.map(code => ({
@@ -383,11 +405,39 @@
                             status: copiedCodes.includes(code.code) ? '已激活' : code.status
                         }))
                         
+                        // 只在页面加载时（randomUnactivatedCode为null时）选择随机邀请码
+                        if (this.randomUnactivatedCode === null) {
+                            const unactivatedCodes = processedCodes.filter(code => code.status === '未激活')
+                            if (unactivatedCodes.length > 0) {
+                                const randomIndex = Math.floor(Math.random() * unactivatedCodes.length)
+                                this.randomUnactivatedCode = unactivatedCodes[randomIndex].code
+                                this.retryCount = 0 // 重置重试计数
+                            } else if (this.retryCount < this.maxRetries) {
+                                // 如果没有未激活的邀请码且未达到最大重试次数，等待后重试
+                                this.retryCount++
+                                setTimeout(() => this.fetchData(), 2000) // 2秒后重试
+                                return
+                            }
+                        }
+                        
                         // 对处理后的邀请码进行排序
                         this.inviteCodes = this.sortCodes(processedCodes)
+                        
+                        // 检查随机选择的邀请码是否仍然有效
+                        const selectedCode = this.inviteCodes.find(code => code.code === this.randomUnactivatedCode)
+                        if (!selectedCode || selectedCode.status !== '未激活') {
+                            // 如果选中的邀请码不存在或已激活，重置随机选择
+                            this.randomUnactivatedCode = null
+                            this.fetchData()
+                        }
                     } catch (error) {
                         console.error('Error fetching data:', error)
-                        this.showNotification('获取数据失败，请刷新页面重试', 'error')
+                        if (this.retryCount < this.maxRetries) {
+                            this.retryCount++
+                            setTimeout(() => this.fetchData(), 2000) // 2秒后重试
+                        } else {
+                            this.showNotification('获取数据失败，请手动刷新重试', 'error')
+                        }
                     }
                 },
                 copyCode(code) {
@@ -419,10 +469,16 @@
                     }
                 },
                 startDataPolling() {
-                    // 每5秒更新一次数据
-                    setInterval(this.fetchData, 5000)
+                    // 每10秒更新一次数据
+                    setInterval(this.fetchData, 10000) // 将间隔改为10秒
                     // 每秒更新倒计时
                     this.countdownInterval = setInterval(this.updateCountdown, 1000)
+                },
+                refreshPage() {
+                    this.randomUnactivatedCode = null // 重置随机码
+                    this.retryCount = 0 // 重置重试计数
+                    this.fetchData() // 重新获取数据
+                    this.showNotification('正在重新获取邀请码...')
                 }
             },
             mounted() {
