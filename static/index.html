@@ -148,14 +148,7 @@
 
     <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
         <!-- 添加刷新按钮 -->
-        <div class="flex justify-end mb-4">
-            <button @click="refreshPage" 
-                    class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center transition-colors duration-300">
-                <span class="mdi mdi-refresh mr-2"></span>
-                重新随机选择
-            </button>
-        </div>
-
+        
         <!-- 原有的更新状态和错误信息显示 -->
         <Transition name="step">
             <div v-if="isUpdating" class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
