@@ -274,10 +274,14 @@ def get_invite_codes(account_id, password):
             quick_start_button.click()
             # 添加点击后的短暂等待
             time.sleep(2)
+        except TimeoutException:
+            logger.warning("点击快速开始按钮超时，直接访问邀请码页面")
+            driver.get("https://space.coze.cn/?from=landingpage")
+            time.sleep(3)  # 给页面加载一些时间
         except Exception as e:
-            logger.warning(f"点击快速开始按钮失败: {str(e)}")
-            # 尝试直接点击立即邀请按钮
-            pass
+            logger.warning(f"点击快速开始按钮失败: {str(e)}，尝试直接访问邀请码页面")
+            driver.get("https://space.coze.cn/?from=landingpage")
+            time.sleep(3)  # 给页面加载一些时间
 
         update_status_step("点击立即邀请")
         try:
