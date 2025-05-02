@@ -483,6 +483,9 @@ def update_invite_codes():
         return
     
     try:
+        # 获取当前数据作为备份
+        current_data = load_data()
+        
         update_status["is_updating"] = True
         update_status["last_error"] = None
         all_codes = []
@@ -513,23 +516,30 @@ def update_invite_codes():
                     update_status["last_error"] = error_msg
         
         # 生成下次更新时间（10-20分钟之间随机）
-        minutes = random.randint(10, 20)
+        minutes = random.randint(30, 40)
         next_update = current_time + timedelta(minutes=minutes)
         next_update_timestamp = int(next_update.timestamp() * 1000)  # 转换为毫秒时间戳
         
         logger.info(f"下次更新时间设置为 {minutes} 分钟后")
         
-        data = {
-            "codes": all_codes,
-            "last_update": update_time,
-            "next_update": next_update_timestamp
-        }
-        
-        save_data(data)
-        update_status["last_update_time"] = update_time
-        update_status["next_update_time"] = next_update_timestamp
-        
-        return data
+        # 只有在成功获取到新数据时才更新
+        if all_codes:
+            data = {
+                "codes": all_codes,
+                "last_update": update_time,
+                "next_update": next_update_timestamp
+            }
+            save_data(data)
+            update_status["last_update_time"] = update_time
+            update_status["next_update_time"] = next_update_timestamp
+            return data
+        else:
+            # 如果没有获取到新数据，保持使用原有数据
+            logger.warning("未获取到新数据，保持使用原有数据")
+            current_data["next_update"] = next_update_timestamp
+            save_data(current_data)
+            update_status["next_update_time"] = next_update_timestamp
+            return current_data
         
     except Exception as e:
         error_msg = f"更新邀请码失败: {str(e)}"

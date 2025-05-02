@@ -395,13 +395,16 @@
                         this.nextUpdateTime = data.next_update_time
                         this.lastError = data.last_error
                         
-                        if (this.isUpdating) {
-                            setTimeout(() => this.fetchData(true), 30000)
+                        // 如果正在更新且已有数据，保持现有数据
+                        if (this.isUpdating && this.inviteCodes.length > 0) {
+                            setTimeout(() => this.fetchData(true), 5000) // 5秒后重试
                             return
                         }
                         
                         if (!data.codes || !Array.isArray(data.codes)) {
-                            console.warn('未获取到邀请码数据，保持现有状态')
+                            if (this.inviteCodes.length === 0) {
+                                console.warn('未获取到邀请码数据')
+                            }
                             return
                         }
                         
@@ -411,16 +414,19 @@
                             status: copiedCodes.includes(code.code) ? '已激活' : code.status
                         }))
                         
-                        if (this.randomUnactivatedCode === null) {
-                            const unactivatedCodes = processedCodes.filter(code => code.status === '未激活')
-                            if (unactivatedCodes.length > 0) {
-                                const randomIndex = Math.floor(Math.random() * unactivatedCodes.length)
-                                this.randomUnactivatedCode = unactivatedCodes[randomIndex].code
-                                this.retryCount = 0
+                        // 只在有新数据时更新显示
+                        if (processedCodes.length > 0) {
+                            if (this.randomUnactivatedCode === null) {
+                                const unactivatedCodes = processedCodes.filter(code => code.status === '未激活')
+                                if (unactivatedCodes.length > 0) {
+                                    const randomIndex = Math.floor(Math.random() * unactivatedCodes.length)
+                                    this.randomUnactivatedCode = unactivatedCodes[randomIndex].code
+                                    this.retryCount = 0
+                                }
                             }
+                            
+                            this.inviteCodes = this.sortCodes(processedCodes)
                         }
-                        
-                        this.inviteCodes = this.sortCodes(processedCodes)
                         
                         const selectedCode = this.inviteCodes.find(code => code.code === this.randomUnactivatedCode)
                         if (!selectedCode || selectedCode.status !== '未激活') {
